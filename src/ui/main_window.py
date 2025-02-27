@@ -501,7 +501,8 @@ class SchemaComparatorApp(QMainWindow):
         self.show_details_btn.setToolTip("Muestra información detallada del elemento seleccionado")
         self.show_details_btn.clicked.connect(self.show_details)
         self.show_details_btn.setEnabled(False)  # Habilitado cuando se selecciona un elemento
-        
+        # Añadir esto junto a la conexión del show_details_btn
+
         # Añadir widgets a las opciones avanzadas
         advanced_options_layout.addWidget(self.normalize_schemas)
         advanced_options_layout.addStretch()
@@ -547,7 +548,9 @@ class SchemaComparatorApp(QMainWindow):
         self.results_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.results_table.setSelectionMode(QTableWidget.SingleSelection)
         self.results_table.verticalHeader().setDefaultSectionSize(30)
-        
+        self.results_table.itemSelectionChanged.connect(
+            lambda: self.open_detail_window_btn.setEnabled(self.results_table.currentRow() >= 0)
+        )        
         # Configurar columnas
         self.results_table.setColumnCount(6)
         self.results_table.setHorizontalHeaderLabels(["Tipo", "Objeto", "Detalle", "Esquema 1", "Esquema 2", "Estado"])
@@ -603,6 +606,22 @@ class SchemaComparatorApp(QMainWindow):
         self.view_options.currentIndexChanged.connect(self.change_detail_view_mode)
         
         detail_header_layout.addWidget(self.detail_object)
+        self.open_detail_window_btn = QPushButton("Abrir en Ventana")
+        self.open_detail_window_btn.setToolTip("Abrir detalles en una ventana separada")
+        self.open_detail_window_btn.setStyleSheet("""
+            QPushButton {
+                padding: 5px 10px;
+                background-color: #f5f5f5;
+                border: 1px solid #ddd;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+        self.open_detail_window_btn.clicked.connect(self.open_detail_window)
+        self.open_detail_window_btn.setEnabled(False)
+        detail_header_layout.addWidget(self.open_detail_window_btn)        
         detail_header_layout.addStretch()
         detail_header_layout.addWidget(QLabel("Modo:"))
         detail_header_layout.addWidget(self.view_options)
@@ -638,6 +657,9 @@ class SchemaComparatorApp(QMainWindow):
             border: 1px solid #ddd;
             border-radius: 4px;
             padding: 10px;
+            font-family: Consolas, monospace;
+            font-size: 11px;  # Fuente ligeramente más pequeña
+            line-height: 1.2;  # Menos espacio entre líneas
         """)
         
         # Panel derecho (Esquema 2)
@@ -735,6 +757,53 @@ class SchemaComparatorApp(QMainWindow):
         # Log inicial
         logger.info("Aplicación iniciada correctamente")
 
+    def open_detail_window(self):
+        """Abre una ventana separada con los detalles del elemento seleccionado."""
+        # Verificar si hay una fila seleccionada
+        row = self.results_table.currentRow()
+        if row < 0:
+            return
+        
+        tipo = self.results_table.item(row, 0).text()
+        objeto = self.results_table.item(row, 1).text()
+        detalle = self.results_table.item(row, 2).text()
+        esquema1 = self.results_table.item(row, 3).text()
+        esquema2 = self.results_table.item(row, 4).text()
+        estado = self.results_table.item(row, 5).text()
+        
+        # Buscar definiciones completas y normalizadas
+        esquema1_full = esquema1
+        esquema2_full = esquema2
+        text1 = esquema1
+        text2 = esquema2
+        
+        for result in self.results:
+            if (result['tipo'] == tipo and 
+                result['objeto'] == objeto and 
+                result['detalle'] == detalle):
+                # Si hay definiciones completas disponibles, usarlas
+                if 'esquema1_full' in result and 'esquema2_full' in result:
+                    esquema1_full = result['esquema1_full']
+                    esquema2_full = result['esquema2_full']
+                
+                # Si hay definiciones normalizadas disponibles, usarlas
+                if 'esquema1_normalized' in result and 'esquema2_normalized' in result:
+                    text1 = result['esquema1_normalized']
+                    text2 = result['esquema2_normalized']
+                
+                break
+        
+        # Importar la clase DetailWindow
+        from ui.widgets.detail_window import DetailWindow
+        
+        # Crear y mostrar la ventana de detalles
+        self.detail_window = DetailWindow(
+            tipo, objeto, detalle, estado, 
+            esquema1, esquema2, text1, text2,
+            parent=self
+        )
+        self.detail_window.showMaximized()
+    
     def toggle_stats_panel(self):
         """Alternar la visibilidad del panel de estadísticas"""
         is_visible = self.stats_counters_widget.isVisible()
@@ -1123,7 +1192,8 @@ class SchemaComparatorApp(QMainWindow):
             logger.error(f"Error al mostrar detalles: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-
+        # Añadir esta línea al final del método show_details
+        self.open_detail_window_btn.setEnabled(True)
     def create_counter(self, title, color, tooltip=""):
         """Función auxiliar para crear un contador con barra de progreso"""
         counter_widget = QWidget()
